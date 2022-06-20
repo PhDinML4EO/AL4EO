@@ -1,7 +1,12 @@
+from importlib.resources import path
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
 )
+import rasterio as rio
+from rasterio.warp import reproject, Resampling
+import numpy as np
+import os
 
 class WarnQgs:
     """Warning class used to pass Exceptions to Qgis without interrupting the daemon"""
@@ -49,3 +54,37 @@ def get_layers(type):
                 ] += f" ({count[layer] - 1}); {bands} bands; H*W: {height}*{width}"
                 count[layer] -= 1
     return layers, layer_list
+
+def createAnnotationRaster(img_pth, gt_pth):
+    with rio.open(img_pth) as src:
+        dst_transform = src.transform
+        dst_crs = src.crs
+        dst_shape = src.height, src.width
+    
+    with rio.open(gt_pth) as src:
+        kwargs = src.meta.copy()
+        kwargs.update({
+            'crs': dst_crs,
+            'transform': dst_transform,
+            'width': dst_shape[1],
+            'height': dst_shape[0]
+        })
+        
+        head, tail = os.path.split(gt_pth)
+        name = "annot"+tail
+        out_pth = os.path.join(head, name)
+
+        with rio.open(out_pth, 'w', **kwargs) as dst:
+            reproject(
+                source=rio.band(src, 1),
+                destination=rio.band(dst, 1),
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=dst_transform,
+                dst_crs=dst_crs,
+                resampling=Resampling.nearest)
+
+    return out_pth, name
+
+
+    

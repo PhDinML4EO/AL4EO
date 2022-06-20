@@ -22,7 +22,6 @@ import gc
 class Query:
     """
     Generic class to define a query system
-
     Args:
         n_px (int): number of pixels to query
         shuffle_prop (float): amount of noise to put in the ranking
@@ -38,14 +37,6 @@ class Query:
         self.hyperparams = hyperparams
         self.score = None
         self.use_cuda = True if hyperparams['device'] == 'cuda' else False
-
-    def pool_loader(self, pool):
-        x_pool, y_pool = pool
-        pool = data.TensorDataset(torch.from_numpy(x_pool), torch.from_numpy(y_pool))
-        loader  = data.DataLoader(pool, shuffle=False,
-                                  batch_size=self.hyperparams['batch_size'],
-                                  pin_memory=self.use_cuda)
-        return loader
 
     def train_loader(self, train_data):
         x_train, y_train = train_data
@@ -103,8 +94,7 @@ class BreakingTie(Query):
     def __init__(self, n_px, hyperparams, shuffle_prop):
         super().__init__(n_px, hyperparams, shuffle_prop, reverse=False)
 
-    def compute_score(self, model, pool):
-        data_loader = self.pool_loader(pool)
+    def compute_score(self, model, data_loader):
         probs = self.compute_probs(model, data_loader)
         sorted_probs = np.sort(probs, axis=-1)
         breaking_ties = sorted_probs[:,-1] - sorted_probs[:,-2]
@@ -155,7 +145,7 @@ class VariationRatios(Query):
 #===============================================================================
 #                       Epsitemic uncertainty heuristics
 #===============================================================================
-#            Code from https://github.com/ElementAI/baal released under 
+#            Code from https://github.com/ElementAI/baal released under
 #             the following Apache License 2.0 was partially modified
 #===============================================================================
 #                               Apache License
@@ -364,9 +354,7 @@ class VariationRatios(Query):
 class BALD(Query):
     """
     Class for BALD query system
-
     Args:
-
     References:
         https://arxiv.org/abs/1703.02910
     """
@@ -382,7 +370,6 @@ class BALD(Query):
         """
         Args:
             probs (ndarray): Array of predictions
-
         Returns:
             Array of scores.
         """
@@ -395,7 +382,6 @@ class BALD(Query):
         """
         Args:
             probs (ndarray): Array of probs
-
         Returns:
             Array of scores.
         """
@@ -412,7 +398,6 @@ class BALD(Query):
 class BatchBALD(BALD):
     """
     Implementation of BatchBALD from https://github.com/BlackHC/BatchBALD
-
     Args:
         num_samples (int): Number of samples to select.
         num_draw (int): Number of draw to perform from the history.
@@ -421,13 +406,10 @@ class BatchBALD(BALD):
             (default: 0.0).
         reduction (Union[str, callable]): function that aggregates the results
             (default: 'none').
-
     Notes:
         This implementation only returns the ranking and not the score.
-
     References:
         https://arxiv.org/abs/1906.08158
-
     Notes:
         K = iterations, C=classes
         Not tested on 4+ dims.
@@ -444,13 +426,10 @@ class BatchBALD(BALD):
     def _draw_choices(self, probs, n_choices):
         """
         Draw `n_choices` sample from `probs`.
-
         References:
             Code from https://github.com/BlackHC/BatchBALD/blob/master/src/torch_utils.py#L187
-
         Returns:
             choices: B... x `n_choices`
-
         """
         probs = probs.permute(0, 2, 1)
         probs_B_C = probs.reshape((-1, probs.shape[-1]))
@@ -465,14 +444,11 @@ class BatchBALD(BALD):
     def _sample_from_history(self, probs, num_draw=100):
         """
         Sample `num_draw` choices from `probs`
-
         Args:
             probs (Tensor[batch, classes, ..., iterations]): Tensor to be sampled from.
             num_draw (int): Number of draw.
-
         References:
             Code from https://github.com/BlackHC/BatchBALD/blob/master/src/joint_entropy/sampling.py
-
         Returns:
             Tensor[num_draw, iterations]
         """
@@ -508,13 +484,10 @@ class BatchBALD(BALD):
         Args:
             predictions (Tensor): First tensor with shape [B, C, Iterations]
             selected (Tensor): Second tensor with shape [M, Iterations].
-
         References:
             Code from https://github.com/BlackHC/BatchBALD/blob/master/src/joint_entropy/sampling.py
-
         Notes:
             Only Classification is supported, not semantic segmentation or other.
-
         Returns:
             Generator yield B entropies.
         """
@@ -540,13 +513,10 @@ class BatchBALD(BALD):
     def compute_score(self, model, pool):
         """
         Compute the score according to the heuristic.
-
         Args:
             predictions (ndarray): Array of predictions [batch_size, C, Iterations]
-
         Notes:
             Only Classification is supported, not semantic segmentation or other.
-
         Returns:
             Array of scores.
         """
@@ -691,7 +661,7 @@ class AdversarialSampler(Query):
 
 #===============================================================================
 #                          Core-set Active Learning
-#                          Parts of code were taken from 
+#                          Parts of code were taken from
 #           https://github.com/dsgissin/DiscriminativeActiveLearning
 #                  released under the following MIT license
 #===============================================================================
@@ -968,7 +938,7 @@ class Coreset(Query):
 #===============================================================================
 #                             Cluster based AL
 #===============================================================================
-#                                Code from 
+#                                Code from
 # https://github.com/google/active-learning/blob/master/sampling_methods/hierarchical_clustering_AL.py
 #             released under the following license was partially modified
 #===============================================================================
@@ -1036,7 +1006,7 @@ class HierarchicalClusterAL(Query):
       self.model = clustering
       self.already_clustered = True
     self.beta = hyperparams['beta']
-    self.init_at_each_step = False 
+    self.init_at_each_step = False
 
     if hyperparams['superpixels'] or hyperparams['subsample']:
         self.init_at_each_step = True
@@ -1375,7 +1345,7 @@ class HierarchicalClusterAL(Query):
         indices = subsample_idx[indices]
 
     return indices
-    
+
 #===============================================================================
 #                          Performance based Active Learning
 #===============================================================================
@@ -1409,15 +1379,12 @@ def get_indices_as_array(img_shape: tuple) -> np.ndarray:
 def gather_expand(data, dim, index):
     """
     Gather indices `index` from `data` after expanding along dimension `dim`.
-
     Args:
         data (tensor): A tensor of data.
         dim (int): dimension to expand along.
         index (tensor): tensor with the indices to gather.
-
     References:
         Code from https://github.com/BlackHC/BatchBALD/blob/master/src/torch_utils.py
-
     Returns:
         Tensor with the same shape as `index`.
     """
@@ -1528,7 +1495,6 @@ class Tree(object):
 
   def create_child_leaves_mapping(self, leaves):
     """DP for creating child leaves mapping.
-
     Storing in dict to save recompute.
     """
     self.n_leaves = len(leaves)

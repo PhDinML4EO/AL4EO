@@ -9,21 +9,53 @@ from learning.session import ActiveLearningFramework
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
+HEADER = 64
+FORMAT = 'utf-8'
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))
-    while True:
-        s.listen()
-        conn, addr = s.accept()
-        with conn:
-            print(f"Connected by {addr}")
-            data = conn.recv(10)
-            data_pkl = data
-            while data:
-                data = conn.recv(10)
-                data_pkl += data
+class ServerQGI():
+    def __init__(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind((HOST, PORT))
+
+    def waitConnection(self):
+        print(f"Waiting connection on port {PORT} ...")
+        self.socket.listen()
+        self.conn, self.addr = self.socket.accept()
+        print(f"Connected by {self.addr}")
+
+    def send(self, data):
+        size = len(data)
+        send_size = str(size).encode(FORMAT) 
+        send_size += b' ' * (HEADER - len(send_size))
+        self.conn.send(send_size)
+        self.conn.send(data)
+        print(f"Data send to {self.addr}")
+
+    def recv(self):
+        recv_size = self.conn.recv(HEADER).decode(FORMAT)
+        if recv_size:
+            data = self.conn.recv(int(recv_size))
+            print(f"Data receive by {self.addr}")
+            return data
+        return None
+            
+    def close(self):
+        print('Server closing')
+        self.socket.close()
+
+if __name__ == '__main__':
+
+    server = ServerQGI()
+
+    try:
+        while True:
+
+            server.waitConnection()
+
+            data_pkl = server.recv()
+
             if data_pkl:
-                print(f"Paramaters receive by {addr}")
                 param = pickle.loads(data_pkl)
                 config = param['config']
                 dataset_param = param['dataset_param']
@@ -48,11 +80,13 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
                 model, query, config = load_query(config, dataset)
                 AL = ActiveLearningFramework(dataset, model, query, config)
-                    
+                
                 AL.step()
+                AL.save() 
 
-                print(f"Send coordinates history to {addr}")
                 history_pkl = pickle.dumps(AL.history)
-                conn.send(history_pkl)
 
-                AL.save()
+                server.send(history_pkl) 
+
+    except KeyboardInterrupt:
+        server.close()  
